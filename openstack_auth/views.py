@@ -12,6 +12,9 @@
 # limitations under the License.
 
 import logging
+import json
+
+from lxml import html
 
 import django
 from django.conf import settings
@@ -19,6 +22,9 @@ from django.contrib import auth
 from django.contrib.auth.decorators import login_required  # noqa
 from django.contrib.auth import views as django_auth_views
 from django import shortcuts
+from django.http import response
+import requests
+from django.template import response as t_response
 from django.utils import functional
 from django.utils import http
 from django.views.decorators.cache import never_cache  # noqa
@@ -27,6 +33,10 @@ from django.views.decorators.debug import sensitive_post_parameters  # noqa
 
 from keystoneclient import exceptions as keystone_exceptions
 from keystoneclient.v2_0 import client as keystone_client_v2
+from keystoneclient.v3 import client as keystone_client_v3
+from keystoneclient import access
+from keystoneclient import session
+from keystoneclient.contrib.auth.v3 import saml2
 
 from openstack_auth import forms
 # This is historic and is added back in to not break older versions of
@@ -34,6 +44,7 @@ from openstack_auth import forms
 # Juno
 from openstack_auth.forms import Login  # noqa
 from openstack_auth import user as auth_user
+from openstack_auth import backend
 from openstack_auth import utils
 
 try:
@@ -101,6 +112,53 @@ def login(request):
         request.session['region_name'] = region_name
     return res
 
+def fed_login(request):
+    if request.GET.get("token") is None:
+        idp = json.loads(request.POST.get('identity_provider'))['id']
+        redirect = settings.OPENSTACK_KEYSTONE_FEDERATED_URL+'/OS-FEDERATION/identity_providers/'+idp+'/protocols/saml2/auth'
+        referral =("?refer_to="+request.get_host()+"/auth/fed_login")
+        return response.HttpResponseRedirect(redirect+referral)
+    else:
+        projects = requests.get(settings.OPENSTACK_KEYSTONE_FEDERATED_URL+'/OS-FEDERATION/projects', headers={'X-Auth-Token':request.GET.get('token')})
+        projects = json.loads(projects.text)["projects"]
+        form = forms.FederatedProjectForm(projects, request.GET.get('token'))
+        #return shortcuts.render(request, 'auth/_fed_projects.html', {'form':form})
+        return t_response.TemplateResponse(request, 'auth/_fed_projects.html', {'projects':projects, 'token': request.GET.get('token')})
+
+def fed_projects(request):
+    projects = json.dumps(request.POST.get('projects'))
+    print "Projects: %s" % projects[0]
+    scope = {'project':{'id': request.POST.get('project')}}
+    identity = {'methods':['saml2'], 'saml2':{'id': request.POST.get('token')}}
+    setattr(request.session, '_unscopedtoken', request.POST.get('token'))
+    auth_payload = {'auth':{'identity':identity, 'scope':scope}}
+    headers = {'Content-Type':'application/json', 'X-Auth-Token': request.POST.get('token')}
+    r = requests.post(settings.OPENSTACK_KEYSTONE_FEDERATED_URL+'/auth/tokens', headers=headers, data=json.dumps(auth_payload))
+    token_data = json.loads(r.text)
+    token_id = r.headers.get('X-Subject-Token')
+    token_data = token_data.get('token')
+    regions = dict(forms.Login.get_region_choices())
+    region = settings.OPENSTACK_KEYSTONE_FEDERATED_URL
+    region_name = regions.get(region)
+    token = access.AccessInfo.factory(body=json.loads(r.text), resp=r, region_name=region_name)
+    request.session['token'] = token
+    project = request.POST.get('project')
+    plugin = saml2.Saml2ScopedToken(settings.OPENSTACK_KEYSTONE_FEDERATED_URL, request.POST.get('token'), project_id=project)
+    sess = session.Session(plugin)
+    try:
+        client = keystone_client_v3.Client(auth_ref=token, session=sess)
+    except Exception as e:
+        print e
+    auth_ref = client.auth_ref
+    token = auth_user.Token(auth_ref)
+    user = auth_user.create_user_from_token(request, token, settings.OPENSTACK_KEYSTONE_FEDERATED_URL)
+    user.authorized_tenants = projects
+    auth_user.set_session_from_user(request, user)
+    
+    request.session[auth.SESSION_KEY] = user.id
+    request.session[auth.BACKEND_SESSION_KEY] = 'openstack_auth.backend.KeystoneBackend'
+    setattr(request, '_keystoneclient', client)
+    return login(request)
 
 def logout(request):
     msg = 'Logging out user "%(username)s".' % \

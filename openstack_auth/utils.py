@@ -151,9 +151,27 @@ def get_project_list(*args, **kwargs):
     else:
         auth_url = kwargs.get('auth_url', '').replace('v2.0', 'v3')
         kwargs['auth_url'] = auth_url
-        client = get_keystone_client().Client(*args, **kwargs)
-        client.management_url = auth_url
-        projects = client.projects.list(user=kwargs.get('user_id'))
+        try:
+            client = get_keystone_client().Client(*args, **kwargs)
+            client.management_url = auth_url
+        except Exception:
+            client = get_keystone_client().Client(token=kwargs.get('token'),
+                                            endpoint=auth_url,
+                                            insecure=getattr(settings, "OPENSTACK_SSL_NO_VERIFY", False),
+                                            auth_url=auth_url,
+                                            debug=settings.DEBUG)
+        try:
+            projects = client.projects.list(user=kwargs.get('user_id'))
+        except Exception as e:
+            print e
+            print kwargs
+            client = get_keystone_client().Client(token=kwargs.get('token'),
+                                            endpoint=auth_url,
+                                            insecure=getattr(settings, "OPENSTACK_SSL_NO_VERIFY", False),
+                                            auth_url=auth_url,
+                                            debug=settings.DEBUG)
+            projects = client.federation.projects.list()
+            print projects
 
     projects.sort(key=lambda project: project.name.lower())
     return projects
