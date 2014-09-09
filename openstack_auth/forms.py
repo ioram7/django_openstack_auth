@@ -69,8 +69,10 @@ class Login(django_auth_forms.AuthenticationForm):
         elif getattr(settings,
                         'OPENSTACK_KEYSTONE_FEDERATED_SUPPORT',
                         False):
-            self.client = client.Client(token="password",
-                                        endpoint=getattr(settings, 'OPENSTACK_KEYSTONE_FEDERATED_URL'))
+            self.client = client.Client(username=getattr(settings, 'OPENSTACK_DISCOVERY_USER'),
+                                        password=getattr(settings, 'OPENSTACK_DISCOVERY_PASSWORD'),
+                                        auth_url=getattr(settings, 'OPENSTACK_KEYSTONE_FEDERATED_URL'))
+            self.client.authenticate()
             realmList = self.client.federation.identity_providers.list()
             CHOICES = (
             )
