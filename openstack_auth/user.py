@@ -36,7 +36,11 @@ def set_session_from_user(request, user):
 
 
 def create_user_from_token(request, token, endpoint, services_region=None):
+    #print "Create User"
+    #print token.user
     return User(id=token.user['id'],
+		idp_id=token.user['idp_id'],
+		protocol_id=token.user['protocol_id'],
                 token=token,
                 user=token.user['name'],
                 user_domain_id=token.user_domain_id,
@@ -59,10 +63,19 @@ class Token(object):
        Token object in the user object.
     """
     def __init__(self, auth_ref):
+	#print auth_ref.get('user')
+
         # User-related attributes
         user = {}
         user['id'] = auth_ref.user_id
         user['name'] = auth_ref.username
+        # Set IdP Id
+        try:
+            user['idp_id'] = auth_ref.get('user')["OS-FEDERATION"]["identity_provider"]["id"]
+            user['protocol_id'] = auth_ref.get('user')["OS-FEDERATION"]["protocol"]["id"]
+        except KeyError:
+            user['idp_id'] = "LOCAL"
+            user['protocol_id'] = "LOCAL"
         self.user = user
         self.user_domain_id = auth_ref.user_domain_id
 
@@ -152,13 +165,17 @@ class User(models.AnonymousUser):
         The id of the Keystone domain scoped for the current user/token.
 
     """
-    def __init__(self, id=None, token=None, user=None, tenant_id=None,
+    def __init__(self, id=None, idp_id=None, protocol_id=None, token=None, 
+                 user=None, tenant_id=None,
                  service_catalog=None, tenant_name=None, roles=None,
                  authorized_tenants=None, endpoint=None, enabled=False,
                  services_region=None, user_domain_id=None, domain_id=None,
                  domain_name=None, project_id=None, project_name=None):
+	#print "Init User"
         self.id = id
         self.pk = id
+	self.idp_id = idp_id
+	self.protocol_id = protocol_id
         self.token = token
         self.username = user
         self.user_domain_id = user_domain_id

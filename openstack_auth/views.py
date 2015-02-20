@@ -114,8 +114,9 @@ def login(request):
 
 def fed_login(request):
     if request.GET.get("token") is None:
-        idp = json.loads(request.POST.get('identity_provider'))['id']
-        redirect = settings.OPENSTACK_KEYSTONE_FEDERATED_URL+'/OS-FEDERATION/identity_providers/'+idp+'/protocols/saml2/auth'
+        idp  = json.loads(request.POST.get('identity_provider'))['idp_id']
+        prot = json.loads(request.POST.get('identity_provider'))['id']
+        redirect = settings.OPENSTACK_KEYSTONE_FEDERATED_URL+'/OS-FEDERATION/identity_providers/'+idp+'/protocols/'+prot+'/auth'
         referral =("?refer_to="+request.get_host()+"/auth/fed_login")
         return response.HttpResponseRedirect(redirect+referral)
     else:
@@ -127,9 +128,10 @@ def fed_login(request):
 
 def fed_projects(request):
     projects = json.dumps(request.POST.get('projects'))
-    print "Projects: %s" % projects[0]
+#    print "Projects: %s" % projects[0]
     scope = {'project':{'id': request.POST.get('project')}}
-    identity = {'methods':['saml2'], 'saml2':{'id': request.POST.get('token')}}
+#    identity = {'methods':['saml2'], 'saml2':{'id': request.POST.get('token')}}
+    identity = {'methods':['abfab'], 'abfab':{'id': request.POST.get('token')}}
     setattr(request.session, '_unscopedtoken', request.POST.get('token'))
     auth_payload = {'auth':{'identity':identity, 'scope':scope}}
     headers = {'Content-Type':'application/json', 'X-Auth-Token': request.POST.get('token')}
@@ -142,6 +144,7 @@ def fed_projects(request):
     region_name = regions.get(region)
     token = access.AccessInfo.factory(body=json.loads(r.text), resp=r, region_name=region_name)
     request.session['token'] = token
+    #print token.get('user')
     project = request.POST.get('project')
     plugin = saml2.Saml2ScopedToken(settings.OPENSTACK_KEYSTONE_FEDERATED_URL, request.POST.get('token'), project_id=project)
     sess = session.Session(plugin)

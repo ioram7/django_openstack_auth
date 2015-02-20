@@ -164,14 +164,14 @@ def get_project_list(*args, **kwargs):
             projects = client.projects.list(user=kwargs.get('user_id'))
         except Exception as e:
             print e
-            print kwargs
+            #print kwargs
             client = get_keystone_client().Client(token=kwargs.get('token'),
                                             endpoint=auth_url,
                                             insecure=getattr(settings, "OPENSTACK_SSL_NO_VERIFY", False),
                                             auth_url=auth_url,
                                             debug=settings.DEBUG)
             projects = client.federation.projects.list()
-            print projects
+            #print projects
 
     projects.sort(key=lambda project: project.name.lower())
     return projects
